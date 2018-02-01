@@ -1,12 +1,21 @@
 /*
-Copyright 2017, Mateus Gomes Pereira
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+ * Copyright 2017, Mateus Gomes Pereira
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and 
+ * associated documentation files (the "Software"), to deal in the Software without restriction, including 
+ * without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+ * copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the 
+ * following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all copies or substantial 
+ * portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+ * LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO 
+ * EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR 
+ * THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
 #ifndef QuadTree_Header_impl_
 #define QuadTree_Header_impl_
 #include <vector>
@@ -57,13 +66,17 @@ namespace QuadTree {
         inline uint8_t getQuad( const qAlignedBox &bb, std::array<qAlignedBox, 4> &aBB );
 
         void insert__r( NodeType *qthis, qObjectType *obj );
+        bool remove__r( NodeType *qthis, const qAlignedBox &bx, qUint objId );
         NodeType *LookupNode( qUint locCode );
+        void clear__r( NodeType * );
 
         void query__r( NodeType *qn, const qAlignedBox &bx, std::vector<qObjectType *> &res );
         bool query__r2( NodeType *qn, const qAlignedBox &bx, std::vector<qObjectType *> &res );
     public:
         HashQuadTree( const qAlignedBox &aabb, uint32_t qMo = 8, uint32_t qMd = 5 );
-        void insert( qObjectType *obj );
+        void insert( qObjectType * );
+        bool remove( qObjectType * );
+        void clear( );
         std::vector<qObjectType *> query( const qAlignedBox &bx, std::vector<qObjectType *> &res );
 
         void draw__r( NodeType *qn, void ( *drw )( const qAlignedBox &, uint32_t, bool ) );
@@ -72,8 +85,9 @@ namespace QuadTree {
     };
 }
 #endif
+#define QUADTREE_IMPLEMENTATION
 #ifdef QUADTREE_IMPLEMENTATION
-namespace QuadTree{
+namespace QuadTree {
 #define decl_HQT(name) HashQuadTree<qObjectType, qAlignedBox, qUint>::name
 #define tmlp_HQT template <class qObjectType, class qAlignedBox, class qUint>
     tmlp_HQT
@@ -135,7 +149,8 @@ namespace QuadTree{
                 }
 
                 qother->objects.push_back( qthis->objects[i] );
-            } else {
+            }
+            else {
                 sw.push_back( qthis->objects[i] );
             }
         }
@@ -143,9 +158,79 @@ namespace QuadTree{
         qthis->objects = std::move( sw );
     }
     tmlp_HQT
+    bool decl_HQT( remove__r )( NodeType *qthis, const qAlignedBox &bx, qUint objId ) {
+        if( qthis == nullptr )
+            return false;
+
+        if( !qthis->boundBox.Overlaps( bx ) )
+            return false;
+
+        for( typename std::vector<qObjectType *>::iterator i = qthis->objects.begin(); i != qthis->objects.end(); i++ ) {
+            if( ( *i )->getID() == objId ) {
+                qthis->objects.erase( i );
+                return true;
+            }
+        }
+
+        return
+            remove__r( LookupNode( this->getChildLoc( qthis->locCode, 0 ) ), bx, objId ) ||
+            remove__r( LookupNode( this->getChildLoc( qthis->locCode, 1 ) ), bx, objId ) ||
+            remove__r( LookupNode( this->getChildLoc( qthis->locCode, 2 ) ), bx, objId ) ||
+            remove__r( LookupNode( this->getChildLoc( qthis->locCode, 3 ) ), bx, objId );
+    }
+    tmlp_HQT
+    void decl_HQT( clear__r )( NodeType *qthis ) {
+        if( qthis == nullptr )
+            return;
+        if( !qthis->hasChild )
+            return;
+
+        using iter =  typename std::unordered_map<qUint, NodeType>::iterator;
+        iter qchilds[4];
+
+        qchilds[0] = qnodes.find( this->getChildLoc( qthis->locCode, 0 ) );
+        qchilds[1] = qnodes.find( this->getChildLoc( qthis->locCode, 1 ) );
+        qchilds[2] = qnodes.find( this->getChildLoc( qthis->locCode, 2 ) );
+        qchilds[3] = qnodes.find( this->getChildLoc( qthis->locCode, 3 ) );
+
+        bool error;
+        error = ( qnodes.end() == qchilds[0] ) ||
+                ( qnodes.end() == qchilds[1] ) ||
+                ( qnodes.end() == qchilds[2] ) ||
+                ( qnodes.end() == qchilds[3] );
+        if( error ) return;
+
+        bool erase;
+
+        erase = ( qchilds[0]->second.objects.size() == 0 ) &&
+                ( qchilds[1]->second.objects.size() == 0 ) &&
+                ( qchilds[2]->second.objects.size() == 0 ) &&
+                ( qchilds[3] -> second.objects.size() == 0 );
+        erase &= ( !qchilds[0]->second.hasChild ) &&
+                 ( !qchilds[1]->second.hasChild ) &&
+                 ( !qchilds[2]->second.hasChild ) &&
+                 ( !qchilds[3]->second.hasChild );
+        if( !erase ) {
+            clear__r( &qchilds[0]->second );
+            clear__r( &qchilds[1]->second );
+            clear__r( &qchilds[2]->second );
+            clear__r( &qchilds[3]->second );
+            return;
+        }
+
+        qthis->hasChild = false;
+        qnodes.erase( qchilds[0] );
+        qnodes.erase( qchilds[1] );
+        qnodes.erase( qchilds[2] );
+        qnodes.erase( qchilds[3] );
+    }
+    // See https://geidav.wordpress.com/tag/octree-optimization-octant-quadtree-spatial-subdivision-memory-footprint/ for details
+    tmlp_HQT
     NodeType<qObjectType, qAlignedBox, qUint> *decl_HQT( LookupNode )( qUint locCode ) {
         const auto iter = qnodes.find( locCode );
-        return ( iter == qnodes.end() ? nullptr : & ( iter->second ) );
+        if(iter == qnodes.end())
+            return nullptr;
+        return &( iter->second );
     }
     tmlp_HQT
     void decl_HQT( query__r )( NodeType *qn, const qAlignedBox &bx,
@@ -191,8 +276,16 @@ namespace QuadTree{
         qnodes.insert( {1, root} );
     }
     tmlp_HQT
+    void decl_HQT( clear )( ) {
+        clear__r( LookupNode( 1 ) );
+    }
+    tmlp_HQT
     void decl_HQT( insert )( qObjectType *obj ) {
         insert__r( LookupNode( 1 ), obj );
+    }
+    tmlp_HQT
+    bool decl_HQT( remove )( qObjectType *obj ) {
+        return remove__r( LookupNode( 1 ), obj->getAABB(), obj->getID() );
     }
     tmlp_HQT
     std::vector<qObjectType *> decl_HQT( query )( const qAlignedBox &bx, std::vector<qObjectType *>
